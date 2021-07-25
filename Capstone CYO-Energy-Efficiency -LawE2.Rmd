@@ -1,0 +1,603 @@
+---
+title: "Capstone CYO - Energy Efficiency"
+author: "Lawrence Ejike"
+date: "18/07/2021"
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE, message = FALSE, warning = FALSE, comment = NA,fig.width=12, fig.height=8 )
+```
+
+## Introduction
+
+### 1.1. Background
+Global warming has been an issue of concern over the last couple decades and its impact has been felt  largely in 2021 with several countries, especially Canada experiencing record high temperatures. Energy production from fossil fuels has been a major contributor of the greenhouse gases that lead to global warming. Buildings for residential, commercial, and industrial uses are important consumers of energy and improving the energy efficiency of such structures would contribute significantly to a reduction in energy demand and consequently, greenhouse gas production and global warming.
+
+Efficient energy building designs involve construction of buildings with the goal of reducing energy loss. The shape of a building is an important index in building energy efficient designs and each shape is determined by various parameters including compactness, glazing area , wall, roof area, to name a few. The energy requirement, both heating and cooling load of a building can those be approximated before construction by factoring these various parameter.
+
+```{r}
+# packages required
+if(!require(openxlsx)) install.packages("openxlsx", repos = "http://cran.us.r-project.org")
+if(!require(tidyverse)) install.packages("tidyverse", repos = "http://cran.us.r-project.org")
+if(!require(caret)) install.packages("caret", repos = "http://cran.us.r-project.org")
+if(!require(randomForest)) install.packages("randomForest", repos = "http://cran.us.r-project.org")
+
+library(openxlsx)
+library(tidyverse)
+library(caret)
+library(randomForest)
+
+
+# import .xlsx file  **Note: required openxlsx package**
+energydat <- read.xlsx("https://archive.ics.uci.edu/ml/machine-learning-databases/00242/ENB2012_data.xlsx", sheet=1)
+```
+
+### 1.2. Executive summary
+This report details the development of a model for predicting the energy efficiency of residential buildings.
+
+The project utilized a data set obtained from Kaggle, which was simulated in Ecotect by Angeliki Xifara (a civil/structural engineer) and Athanasois Tsanas from the University of Oxford, UK. The data set comprised 768 samples (building shapes) and 8 features (variables), with two responses.
+
+The primary goal of this project is to create a model that predicts the energy efficiency (heating and cooling loads) of residential buildings, using variables that determines the shape of the building. A secondary goal of the project was to minimize root mean squared error, RMSE (a measure of the deviation of predicted values from observed values) for the predicted heating load and cooling load.
+
+The development of the prediction model was achieved using machine learning as well as other data science tools. The energy efficiency data set was first split into two sets, evaluation and probe set, and the latter (probe set) was split into a train and test set. Predictive models using the train set were made that incorporated the effect of various features (relative compactness, wall area, orientation,glazing area, etc.) and these models were tested on the test set. The performance of each model was evaluated against each other. The model with the relative best rmse  obtained on the test set was applied to the probe set and used to predict the heating load and cooling load in the evaluation set, yielding a final RMSE value.
+
+## 2. Method/Analysis
+
+The following packages, openxlsx, tidyverse,and caret were installed and used to download, clean, and create the data set.
+
+i) openxlsx package was used to read, write and edit xlsx files
+ii) tidyverse was used for data wrangling, web-scrapping, joining, and reshaping data tables
+iii) caret package was used for machine learning and building prediction algorithms 
+iv) randomForest package was used for Random Forest regression
+
+The data was downloaded from UCI Machine Learning Repository website as a xlsx file that is ready for machine learning  analysis and saved in rstudio as a table, energydat.
+
+### 2.1. Data Exploration and Visualization
+ The data in energydat data set was explored with tables and graphs where applicable, to gain useful insights that formed the basis of subsequent modeling approaches. An examination of the dimensions of the data sets, energydat, shows that it contains 768 rows and 10 columns. 
+```{r, echo= TRUE }
+# display number of rows and columns
+dim(energydat)
+
+#check structure of the data
+str(energydat)
+
+#display first 6 rows of the data
+head(energydat)
+```
+
+
+The data had 768 rows and 10 columns (8 features, X1-X8 and 2 outcomes,Y1-Y2).The content of the columns were numbers and the features they represented were given by:
+
+•	X1 - Relative Compactness
+•	X2 - Surface Area
+•	X3 - Wall Area
+•	X4 - Roof Area
+•	X5 - Overall Height
+•	X6 - Orientation
+•	X7 - Glazing Area
+•	X8 - Glazing Area Distribution
+
+ The outcomes and their representation are given by 
+•	Y1 - Heating Load 
+•	Y2 - Cooling Load
+
+Although the columns were original labeled as X1 to X8 for variables and Y1 to Y2 for outcomes, the names were updated to reflect the features they represent. The first 6 rows of the updated energydat data set are shown below: 
+ 
+```{r}
+
+#assign appropriate column names
+colnames(energydat) <- c("relative_compactness","surface_area","wall_area","roof_area","overall_height",
+                 "orientation","glazing_area", "glazing_area_distribution", "heating_load", "cooling_load")
+
+#display first 6 rows of the updated data table
+energydat %>% head() 
+```
+ A check of the data set  or each column of the data set for missing values (na) returned as false or zero.
+```{r, echo=TRUE}
+#checking for missing values
+any(is.na(energydat))
+```
+ When the summary function is applied to the energydat data set, it displayed important statistics : range (min & max), mean, median, etc and showed the variability in the features and outcome.
+```{r, echo=TRUE}
+#summary stats of data
+summary(energydat)
+
+```
+ The average heating load and average cooling load for each unique value of each variable are shown in the subsequent graphs
+ 
+```{r}
+### relative_compactness ###
+#compute table of average heating and cooling load for relative compactness
+Compact_avg <- energydat %>% group_by(relative_compactness) %>% 
+  summarize(count =n(), Heat_avg = mean(heating_load), cool_avg = mean(cooling_load))  
+
+#plot average heating and cooling load vs relative compactness
+Compact_avg %>% 
+  gather(Load_type, average_load, -c(relative_compactness,count)) %>% 
+  ggplot(aes(relative_compactness, average_load, color = Load_type)) + 
+  geom_point()+ 
+  ggtitle("Average heating and cooling load for relative compactness")
+  
+
+###surface_area ###
+#compute table of average heating and cooling load for relative compactness
+Surface_Area_avg <- energydat %>% group_by(surface_area) %>% 
+  summarize(count =n(), Heat_avg = mean(heating_load), cool_avg = mean(cooling_load)) 
+
+#plot average heating and cooling load vs surface area
+Surface_Area_avg %>% 
+  gather(Load_type, average_load, -c(surface_area,count)) %>% 
+  ggplot(aes(surface_area, average_load, color = Load_type)) + 
+  geom_point() + 
+  ggtitle("Average heating and cooling load for surface area")
+
+
+### wall_area ###
+#compute table of average heating and cooling load for relative compactness
+wall_area_avg <- energydat %>% group_by(wall_area) %>% 
+  summarize(count =n(), Heat_avg = mean(heating_load), cool_avg = mean(cooling_load)) 
+
+#plot average heating and cooling load vs wall area
+wall_area_avg %>% 
+  gather(Load_type, average_load, -c(wall_area,count)) %>% 
+  ggplot(aes(wall_area, average_load, color = Load_type)) + 
+  geom_point() + 
+  ggtitle("Average heating and cooling load for wall area")
+
+
+### roof_area ###
+#compute table of average heating and cooling load for roof area
+roof_area_avg <- energydat %>% group_by(roof_area) %>% 
+  summarize(count =n(), Heat_avg = mean(heating_load), cool_avg = mean(cooling_load)) 
+
+#plot average heating and cooling load vs roof area
+roof_area_avg %>% 
+  gather(Load_type, average_load, -c(roof_area,count)) %>% 
+  ggplot(aes(roof_area, average_load, color = Load_type)) + 
+  geom_point() + 
+  ggtitle("Average heating and cooling load for roof area")
+
+### overall_height ###
+#compute table of average heating and cooling load for overall height
+overall_height_avg <- energydat %>% group_by(overall_height) %>% 
+  summarize(count =n(), Heat_avg = mean(heating_load), cool_avg = mean(cooling_load)) 
+
+#plot average heating and cooling load vs overall height
+overall_height_avg %>% 
+  gather(Load_type, average_load, -c(overall_height,count)) %>% 
+  ggplot(aes(overall_height, average_load, color = Load_type)) + 
+  geom_point() + 
+  ggtitle("Average heating and cooling load for overall height")
+
+
+### orientation_avg ###
+#compute table of average heating and cooling load for orientation
+orientation_avg <- energydat %>% group_by(orientation) %>% 
+  summarize(count =n(), Heat_avg = mean(heating_load), cool_avg = mean(cooling_load)) 
+
+#plot average heating and cooling load vs orientation
+orientation_avg %>% 
+  gather(Load_type, average_load, -c(orientation,count)) %>% 
+  ggplot(aes(orientation, average_load, color = Load_type)) + 
+  geom_point() + 
+  ggtitle("Average heating and cooling load for orientation")
+
+
+### glazing_area ###
+#compute table of average heating and cooling load for glazing area
+glazing_area_avg <- energydat %>% group_by(glazing_area) %>% 
+  summarize(count =n(), Heat_avg = mean(heating_load), cool_avg = mean(cooling_load)) 
+
+#plot average heating and cooling load vs glazing area
+glazing_area_avg %>% 
+  gather(Load_type, average_load, -c(glazing_area,count)) %>% 
+  ggplot(aes(glazing_area, average_load, color = Load_type)) + 
+  geom_point() + 
+  ggtitle("Average heating and cooling load for glazing area")
+
+
+### glazing_area_distribution ###
+#compute table of average heating and cooling load for glazing area distribution
+glazing_area_dist_avg <- energydat %>% group_by(glazing_area_distribution) %>% 
+  summarize(count =n(), Heat_avg = mean(heating_load), cool_avg = mean(cooling_load)) 
+
+#plot average heating and cooling load vs glazing area distribution
+glazing_area_dist_avg %>% 
+  gather(Load_type, average_load, -c(glazing_area_distribution,count)) %>% 
+  ggplot(aes(glazing_area_distribution, average_load, color = Load_type)) + 
+  geom_point() + 
+  ggtitle("Average heating and cooling load for glazing area distribution")
+```
+
+Each graph show the changes in the average heating load and average cooling load as the corresponding variable changes. However, the relationships displayed in the graph could be confounded by the impact of changes in other features for each unique entry of a feature under consideration. The graphs also shows the number of unique values for each variable: 
+- relative compactness and surface area have 12 each,
+- wall area has 7, 
+- glazing area distribution has 6,
+- roof area, orientation,and glazing area have 4 each, and
+- overall height has 2
+
+### 2.2 Data Cleaning
+#### 2.2.1.	Creating training (probe) set and hold out test (evaluation) set
+The energydat data set was split using createDataPartition into probe set (90% of the data) and evaluation set (remaining 10%) using createDataPartition function in the caret package. 
+
+```{r, echo=FALSE}
+#set seed to 1
+set.seed(1, sample.kind = "Rounding")
+
+# Split energydat into probe and evaluation set. evaluation set will be 10% of energydat data
+index <- createDataPartition(energydat$heating_load, times = 1, p = 0.1, list = FALSE)
+probe <- energydat[-index,]
+evaluation <- energydat[index,]
+
+# removes files and table that are no longer needed
+rm(energydat, index)
+```
+
+#### 2.2.2.	Creating train set and test set from edx
+To be able to test the performance of the models being developed, the probe data set was split into a train set and a test set. The train_set was used for model building while the test set was used to check the performance of the developed models. The method for creating the train and test set from the probe data set was similar to that for creating the probe and evaluation set from the energydat data set. 
+
+The train and test sets were created using the createDataPartition function in the caret package. The train set consisted of 80% of the probe data set while the test set constituted the remaining 20%.
+```{r}
+#set seed (i.e the start number used in random sequence generation)
+set.seed(1, sample.kind = "Rounding")
+
+# set number of digits to be printed 
+options(digits = 5) 
+
+#split probe into two sets, train and test
+test_index <- createDataPartition(probe$heating_load, times = 1, p = 0.2, list = FALSE)
+train_set <- probe[-test_index,]
+test_set <- probe[test_index,]
+rm(test_index)
+```
+The metric used for evaluating the performance of each model built was residual mean squared error, RMSE. RMSE represents the difference between values predicted by each model and the actual values observed. In relative terms, it is the error made when predicting the heating load and cooling load, i.e. the deviation of prediction values from real values. Hence, the lower the rmse value, the better the predictive power of a given model. The target for this project was to obtain as low an rmse value as possible. The RMSE equation is shown below
+$$ RMSE = \sqrt{\frac{1}{N}\displaystyle\sum_{i} (\hat{y}_{i}-y_{i})^{2}} $$
+In R, the RMSE function was defined as follows:
+```{r, echo=TRUE}
+# define function for computing RMSE for vectors of energy load and corresponding predictors
+RMSE <- function(true_load, predicted_load){sqrt(mean((true_load - predicted_load)^2))}
+```
+
+### 2.3 Modelling
+ For each of the following models, the RMSE function was applied with the predicted load to calculate the rmse of the model. A table, RMSE_results was also set up to which all models developed and their corresponding rmse values are stored for easy comparison. The number of digits to be printed was also set with the option function as shown below:
+```{r}
+# set number of digits to be printed 
+options(digits = 5)  
+```
+ 
+#### 2.3.1. Model 1: Using the average
+The simplest model for predicting heating load and cooling load based on the data is one that gives the average heating load of all the entries as an estimate of the heating load, and similarly, gives the average cooling load of as the estimate for cooling load for a combination of variable. This model gives the same average value of heating load for each combination of variables and likewise for cooling load.
+```{r, include = FALSE}
+# compute the average of all the load
+heat_avg <- mean(train_set$heating_load)
+cool_avg <- mean(train_set$cooling_load)
+
+# RMSE obtained by predicting mu for all unknown rating 
+naive_rmse_1 <- RMSE(test_set$heating_load, heat_avg)
+naive_rmse_2 <- RMSE(test_set$cooling_load, cool_avg)
+
+RMSE_results <- data.frame(Model ="Using the average",
+                           RMSE_heat = naive_rmse_1,
+                           RMSE_cool = naive_rmse_2) 
+RMSE_results
+```
+#### 2.3.2 Model 2: Linear Regression
+
+Beyond the simple prediction of average values for cooling and heating load, regression models were applied and evaluated for rmse. For each outcome being predicted, the other outcome was excluded from the model fitting. For example, when fitting a model for heating load, the 8 features were used while the cooling load was excluded from the model. 
+For linear regression, after fitting, the summary function was used to display the co-efficient and p-values for each variable. Variables with p-value > 0.05 were then excluded, since they are not statically significant to the fitting. NA value was obtained for co-efficient and p-value for roof_area. This indicates that this variable could also be excluded from the model. The alias function showed that roof_area was dependent on the wall area and surface area. For the final linear regression model, roof area (NA as p-value), and both orientation and glazing area distribution (p-values > 0.05) were excluded...However, these exclusions only marginally improved the rmse of the model for heating load (from 3.0340 to 2.9953) for heating load, but did not have a significant change on that of the cooling load (3.3389 vs 3.3434).
+```{r, include = FALSE}
+fit_heat <- lm(heating_load ~ . - cooling_load, data = train_set) # fit lm model for heating load using 8 variables
+fit_cool <- lm(cooling_load ~ . - heating_load, data = train_set) # fit lm model for cooling load using 8 variables
+
+summary(fit_heat) #print summary of linear regression model for heating load
+summary(fit_cool) #print summary of linear regression model for cooling load
+
+# NA as coefficient for roof_area suggest that the variable can be excluded from our model
+#alias shows roof_area is dependent on surface area and wall area
+
+# update lm model for heating load to exclude roof_area
+fit_heat <- lm(heating_load ~ . - cooling_load - roof_area, data = train_set)
+# update lm model for cooling load to exclude roof_area
+fit_cool <- lm(cooling_load ~ . - heating_load - roof_area, data = train_set)
+
+alias(fit_heat) # no dependencies any longer
+summary(fit_heat)#print summary of linear regression model for heating load
+summary(fit_cool)#print summary of linear regression model for cooling load
+
+lm_heat_pred <- predict(fit_heat, test_set) #predict heating load using lm model
+lm_cool_pred <- predict(fit_cool, test_set) #predict cooling load using lm model
+
+lm_heat_rmse <- RMSE(test_set$heating_load,lm_heat_pred ) #compute and assign rmse for heating load
+lm_heat_rmse # print rmse
+# same as with roof_area included
+
+lm_cool_rmse <- RMSE(test_set$cooling_load,lm_cool_pred) #compute and assign rmse for cooling load
+lm_cool_rmse #print rmse
+
+#excluding variables with p>0.05 from linear regression for heating load
+fit_heat_2 <- lm(heating_load ~ . - cooling_load - roof_area - orientation - glazing_area_distribution, data = train_set)
+lm_heat_pred_2 <- predict(fit_heat_2, test_set) # predict heating load using lm model
+lm_heat_2_rmse <- RMSE(test_set$heating_load,lm_heat_pred_2) #compute and assign RMSE for heating load
+lm_heat_2_rmse #print rmse
+
+#excluding variables with p>0.05 from linear regression for cooling load
+fit_cool_2 <- lm(cooling_load ~ . - heating_load - roof_area - orientation - glazing_area_distribution, data = train_set)
+lm_cool_pred_2 <- predict(fit_cool_2, test_set) # predict heating load using lm model
+lm_cool_2_rmse <- RMSE(test_set$cooling_load,lm_cool_pred_2) #compute and assign RMSE for heating load
+lm_cool_2_rmse #print rmse
+
+# Update RMSE table
+RMSE_results <- bind_rows(RMSE_results,
+                          data.frame(Model ="Linear Regression",  
+                                     RMSE_heat = lm_heat_2_rmse,
+                                     RMSE_cool = lm_cool_2_rmse))
+RMSE_results #print RMSE table
+```
+#### 2.3.3 Model 3 : K-nearest neighbours (knn)
+ All features were used in the fitting of KNN model using the train_set data. Cross-validation was performed to optimize the k value(number of nearest neighbors). A best tune value of 3 was obtained for both heating load and cooling load. This optimized value of k was automatically used in the fitted model to predicted both outcomes on the test set. The rmse obtained for predictions on the test set were 1.6959 and 1.6053 for heating load and cooling load respectively.
+
+```{r, echo=TRUE}
+## KNN model for heating load
+set.seed(1, sample.kind = "Rounding") #set seed to 1
+
+#cross-validation for knn model for heating load
+knn_cv_heat <- train(heating_load ~ . - cooling_load, method = "knn", 
+                      data = train_set,
+                      tuneGrid = data.frame(k = seq(3, 51, 2)),
+                      trControl = trainControl(method = "cv", number = 10, p = .9))
+
+knn_cv_heat$bestTune # display optimized complexity parameter 
+```
+
+```{r, echo=TRUE}
+knn_heat_pred <- predict(knn_cv_heat, test_set) # predict heating load
+
+knn_heat_rmse  <- RMSE(test_set$heating_load,knn_heat_pred) # compute rmse for heating load
+
+knn_heat_rmse # print rmse
+```
+
+```{r, echo=TRUE}
+## KNN model for cooling load
+set.seed(1, sample.kind = "Rounding") # set seed to 1
+
+# use cross-validation to choose k 
+knn_cv_cool <- train(cooling_load ~ . - heating_load, method = "knn", 
+                     data = train_set,
+                     tuneGrid = data.frame(k = seq(3, 51, 2)),
+                     trControl = trainControl(method = "cv", number = 10, p = .9))
+
+knn_cv_cool$bestTune # display optimized k value
+```
+
+```{r, echo=TRUE}
+knn_cool_pred <- predict(knn_cv_cool, test_set) # predict cooling load
+
+knn_cool_rmse  <- RMSE(test_set$cooling_load,knn_cool_pred) # compute rmse for cooling load
+
+knn_cool_rmse # print rmse
+```
+
+```{r, include = FALSE}
+# Update RMSE table
+RMSE_results <- bind_rows(RMSE_results,
+                          data.frame(Model ="knn",  
+                                     RMSE_heat = knn_heat_rmse,
+                                     RMSE_cool = knn_cool_rmse))
+RMSE_results #print RMSE table
+```
+#### 2.3.4 Model 4 : Decision Tree
+A decision tree is a tree based algorithm used to solve both regression and classification problem. Here, a regression tree was applied since the outcomes are continuous. The train function in the caret package was used with the method set as 'rpart' for decision trees. Cross validation was performed at the onset,to optimize the complexity parameter (the minimum improvement in the model at each node),cp over a range of 0 to 0.1. For both heating and cooling load, the optimized cp value was 0. The model was fitted with all variables and the rmse obtained for heating load and cooling load based on values predicted on the test set were 0.75732 and 1.8205 respectively. The rmse for cooling was surprisingly larger than expected considering the value for heating load. Several attempts to prune the fitted tree for the cooling load only produced large rmse
+
+```{r, include = FALSE}
+# decision tree model for heating load
+set.seed(1, sample.kind = "Rounding") # set seed to 1
+
+# use cross-validation to choose complexity parameter,cp 
+rpart_heat <- train(heating_load ~ . - cooling_load, method = "rpart",
+                     data = train_set,
+                     tuneGrid= data.frame(cp = seq(0, 0.1, 0.002)))
+
+ggplot(rpart_heat) # plot rmse vs cp
+
+rpart_heat$bestTune # display optimized cp
+
+rpart_heat_pred <- predict(rpart_heat, test_set) # predict heating load
+
+rpart_heat_rmse <- RMSE(test_set$heating_load,rpart_heat_pred) # compute and assign rmse for heating load
+
+rpart_heat_rmse # print RMSE
+
+```
+
+```{r, echo=TRUE}
+# plot decision tree for heating load
+plot(rpart_heat$finalModel)
+text(rpart_heat$finalModel, cex = 0.8)
+```
+
+```{r, include = FALSE}
+## decision tree model for cooling load
+set.seed(1, sample.kind = "Rounding") # set seed to 1
+
+# use cross-validation to select complexity parameter,cp
+rpart_cool <- train(cooling_load ~ . - heating_load, method = "rpart",
+                    data = train_set,
+                    tuneGrid= data.frame(cp = seq(0, 0.05, 0.002)))
+
+ggplot(rpart_cool) # plot rmse vs cp
+
+rpart_cool$bestTune # display optimized cp
+
+rpart_cool_pred <- predict(rpart_cool, test_set) # predict cooling load
+
+rpart_cool_rmse <- RMSE(test_set$cooling_load,rpart_cool_pred) # compute and assign rmse for cooling load
+
+rpart_cool_rmse # print rmse
+
+```
+
+```{r, echo=TRUE}
+# plot decision tree for cooling load
+plot(rpart_cool$finalModel)
+text(rpart_cool$finalModel, cex = 0.8)
+```
+
+```{r, include = FALSE}
+# Update RMSE table
+RMSE_results <- bind_rows(RMSE_results,
+                          data.frame(Model ="Decision Tree",  
+                                     RMSE_heat = rpart_heat_rmse,
+                                     RMSE_cool = rpart_cool_rmse))
+RMSE_results #print RMSE table
+```
+#### 2.3.4 Model 5 : Random Forest
+
+Random forest is a collection of decision trees. It improves predictions performance and reduces instability by averaging multiple decision tress[1]. The final prediction is the average prediction of these trees.For this model, the train function with method set as rf was used to perform cross validation and train the model. For cross validation, the value optimized was mtry, the number of variables available for splitting at each tree node. The best value obtained for mtry was 6 for heating load and 4 for cooling load. Model fitting was performed with best tune mtry values and ntree set to 100. A plot of the error vs number of tree showed that ntree at 100 was a sufficient choice. Application of the VarImp function in caret package also display the importance of each variable to the model
+
+```{r, echo=TRUE}
+## random forest model for heating load
+set.seed(5, sample.kind = "Rounding") # set seed to 5
+
+# use cross-validation to select mtry
+rf_heat <- train(heating_load ~ . - cooling_load, method = "rf", data= train_set, 
+                  ntree = 100, tuneGrid = data.frame(mtry = seq(1:7)))
+
+#plot of mtry vs RMSE
+ggplot(rf_heat)
+
+rf_heat$bestTune #display optimized mtry
+```
+
+```{r, include=FALSE}
+#fit randomforest model for heating load
+check_tree <- randomForest(heating_load ~ . - cooling_load,
+                       data= train_set,
+                       ntree = 150,
+                       minNode = rf_heat$bestTune$mtry)
+
+plot(check_tree) #plot number of tree vs error 
+```
+
+```{r, include=FALSE}
+rf_heat_pred <- predict(rf_heat, test_set) # predict heating load
+
+rf_heat_rmse <- RMSE(test_set$heating_load,rf_heat_pred) # compute and assign rmse for heating load
+
+rf_heat_rmse # print rmse
+
+```
+
+```{r, echo=TRUE}
+# important variables for predicting heating load
+varImp(rf_heat)
+
+## random forest model for cooling load
+set.seed(5, sample.kind = "Rounding") # set seed to 5
+
+# use cross-validation to select mtry
+rf_cool <- train(cooling_load ~ . - heating_load, method = "rf", data= train_set, 
+                 ntree = 100, tuneGrid = data.frame(mtry = seq(1:7)))
+            
+#mtry value that maximizes accuracy
+rf_cool$bestTune
+```
+
+```{r, include=FALSE}
+rf_cool_pred <- predict(rf_cool, test_set) # predict cooling load
+
+rf_cool_rmse <- RMSE(test_set$cooling_load,rf_cool_pred) # compute and assign rmse
+
+rf_cool_rmse # print rmse
+
+# Update RMSE table
+RMSE_results <- bind_rows(RMSE_results,
+                          data.frame(Model ="Random Forest",  
+                                     RMSE_heat = rf_heat_rmse,
+                                     RMSE_cool = rf_cool_rmse))
+RMSE_results #print RMSE table
+```
+
+```{r, echo=TRUE}
+# important variables for predicting cooling load
+varImp(rf_cool)
+```
+
+#### 2.3.6. Predicting energy load on the evaluation set
+
+Based on rmse values, Model 5 (random Forest)  and Model 3 (Knn) was then updated with the probe data set as a training set and then used to make prediction on the evaluation set for heating load and cooling load respectively.  
+```{r, echo=TRUE}
+###############################
+# Application to evaluation set
+###############################
+
+## random forest model for heating load in evaluation set
+set.seed(5, sample.kind = "Rounding") # set seed to 5
+
+# use cross-validation to select mtry for 
+rf_heat <- train(heating_load ~ . - cooling_load, method = "rf", data= probe, 
+                 ntree = 100, tuneGrid = data.frame(mtry = seq(1:7)))
+
+#display optimized mtry
+rf_heat$bestTune 
+
+pred_heat <- predict(rf_heat, evaluation) # predict heating load
+
+# compute and assign rmse for heating load
+heat_rmse <- RMSE(evaluation$heating_load,pred_heat) 
+
+heat_rmse # print rmse
+
+## Model 3 (knn) for predicting cooling load in evaluation set
+set.seed(5, sample.kind = "Rounding") # set seed to 5
+
+# use cross-validation to choose k 
+knn_cool <- train(cooling_load ~ . - heating_load, method = "knn", 
+                     data = probe,
+                     tuneGrid = data.frame(k = seq(3, 51, 2)),
+                     trControl = trainControl(method = "cv", number = 10, p = .9))
+
+knn_cool$bestTune # display optimized k value
+
+pred_cool <- predict(knn_cool, evaluation) # predict cooling load
+
+cool_rmse  <- RMSE(evaluation$cooling_load,pred_cool) # compute rmse for cooling load
+
+cool_rmse # print rmse
+
+```
+
+## 3. Result & Discussion
+```{r}
+#format RMSE column to 4 decimal place
+RMSE_results$RMSE_heat <- format(RMSE_results$RMSE_heat,digits = 4)
+RMSE_results$RMSE_cool <- format(RMSE_results$RMSE_cool,digits = 5)
+
+#print table
+RMSE_results %>% knitr::kable(caption = "RMSE results for different models")
+```
+
+Section 2.3 outlined the different modeling approaches to prediction the heating load and cooling load for buildings.The rmse results for each model are presented in the table above. Model 1 (using the average) predicted the average heating load of the train set as the heating load for each entry in the test set, and likewise, the average cooling load as the cooling load for the test set entries. This gave an RMSE of 9.8110 for heating load and 9.4237 for cooling load.
+
+Model 2 (linear regression) applied linear regression in predicting energy load using variables. This model significantly improved the rmse obtained from prediction on test_set, yielding 3.0340 for heating load and 3.3389 for cooling load. When variables considered statistically insignificant by the linear regression model were removed, the rmse for heating and cooling load changed to 2.9953 and 3.3434 respectively. 
+
+In Model 3, knn model was applied for regression and subsequent prediction.This model produced much better rmses than the linear regression model, giving values of 1.6959 and 1.6043 for heating load and cooling loads respectively.
+
+Model 4 (Decision Tree) entailed a decision tree regression using the train set data. The model was fitted with all variables and then used to make prediction on the test set. The rmse obtained for heating load and cooling load based on values predicted on the test set were 0.7573 and 1.8205 respectively. Model 4 significantly improved prediction on the heating load compared to knn(1.6959) or linear regression(2.9953) as shown by its lower rmse. However, Model 4 underperformed slightly on cooling load when compared to knn (1.6043), although outperforming linear regression rmse. Attempts to improve the rmse on cooling load by pruning proved futile.  
+
+Model 5 (random Forest) used random forest model to perform regression on the train set data, prior to prediction on the test set. RMSE values of 0.5329 and 1.7989 were obtained for heating load and cooling load for this model, which out perform all previous models except for the knn model for cooling load test model.For the heating model,surface area was the most important variable, followed by overall height (99.76) , roof area (82.71), and then relative compactness (79.86). For cooling load, surface area had the highest importance, followed by roof area (60.52);  overall height was third (37.83), and relative compactness was the fourth (36.01). These differences in the position and extent of importance of variables to the model for heating and cooling load, coupled with the differences in the number of unique values for each variable likely accounts for the difference in the effectiveness of the random forest model as seen in the rmse for each outcome
+
+Considering the outcomes from all five models, the best performing model based on rmse value for prediction on the test set was chosen. Model 5 (Random forest) provided the best overall prediction based on rmse, with an overwhelming low rmse on heating load compared to others. However, Model 3 (knn) gave the best rmse for cooling load (1.6053), being lower than that Model 5 (1.7929). Therefore, Model 5 was applied for heating load modeling & prediction while Model 3 will be applied for cooling load modeling and prediction. These were then applied using 'probe' data set as a training set and used to make prediction on the evaluation set. RMSE values of **0.51654** and **1.4020** were obtained for heating load and cooling load respectively.
+
+## 4. Conclusion
+This report outlines the development of a model for predicting energy (heating and cooling load) for buildings. The project was built on data set generated by a civil/structural engineer and staff at the University of Oxford, which was made available on UCI Machine Learning Repository website. The data set comprised of 768 samples with 8 features that define the shape of the residential buildings and two predictable outcomes, heating load and cooling load. The ability to predict the energy demand for a structure before construction is important for creating energy efficient building designs. The primary goal of this project is to create a model that predicts the energy efficiency of buildings using variables that determines the shape of the building. A secondary goal of the project was to minimize root mean squared error, RMSE (a measure of the deviation of predicted values from observed values) for the predicted heating load and cooling load.
+
+Five models were developed ranging from a basic use of averages(Model 1) to linear regression (Model 2), knn (Model 3), decision tree (Model 4) and random forest (Model 5). Model parameters were optimized were possible and a final model chosen based on performance of trained models in prediction on test_set. Model 5 produced the best rmse for heating load and while Model 3 gave the best for cooling load.These model were then applied to the evaluation set, yielding 0.51654 and 1.4020 for heating and cooling loads respectively
+
+Some limitations of the current method employed in this project is that 
+(1) it assumes an additive relationship between all the predictors,
+(2) there might be other data structures the model did not account for. For example, it does not account for multi-colinearity in the data set (although this may not impact prediction if not severe)
+
+For the future, one major improvement on this model should also apply an ensemble model. An Ensemble would combine multiple machine learning algorithms into one model to improve prediction.This method could combine both the random forest and knn models into one, and/ or include other appropriate models. Other considerations could be to apply Principle Component Analysis (PCA) which would reduce the number of variables considered, based on variance. However, there may be a trade off in accuracy with the dimensional reduction of PCA.
+
